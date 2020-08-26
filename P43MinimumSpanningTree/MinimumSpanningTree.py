@@ -6,7 +6,18 @@ import random
 import time
 import logging
 import pandas as pd
-from numba import jit
+
+class MyTimer():
+    '''
+    時刻計測用 のクラス
+    '''
+    #MY_TIMER = 0
+
+    def set_timer(self):
+        self.MY_TIMER = time.time()
+
+    def get_timer(self):
+        return(time.time() - self.MY_TIMER)
 
 class ProblemGraph():
     def __init__(self,size=10,p=0.4,seed=0):
@@ -26,24 +37,26 @@ class ProblemGraph():
         self.pos = nx.spring_layout(self.G)
 
     def Solve(self):
+        mytimer = MyTimer()
         #Edge 番号があるかどうかわからないので、エッジの集合を作成し、Indexを番号とする。
         self.edges = list(self.G.edges())
 
         #Pulpで変数定義。普通にi番目のエッジを選択したときに１となる変数X[i]を定義
         P = LpProblem("MinimumSpanningTree",LpMinimize)
         X = LpVariable.dicts('X',range(len(self.edges)),0,1,'Binary')
-        t0 = time.time()
+        mytimer.set_timer()
         #目的関数
         tmp_obj = 0
         for idx,e in enumerate(self.edges):
             tmp_obj +=  X[idx] * self.G.edges[e[0],e[1]]['weight']
         P += tmp_obj
 
-        t1 = time.time()
-        self.time_objective = round(t1-t0,3)
-        logging.debug(f"Creating objective was taken : {self.time_objective} sec") 
+        self.time_objective = round(mytimer.get_timer(),3)
+        logging.debug("Creating objective was taken : %f sec",self.time_objective) 
+
         #制約式1. 全ての閉路よりも1以上少ないEdgeが選ばれる
         #有効グラフ用simple_cyclesを使う
+        mytimer.set_timer()
         G2 = self.G.to_directed()
         cycles = nx.simple_cycles(G2)
         for cycle in cycles:
@@ -60,23 +73,23 @@ class ProblemGraph():
             #合計が閉路の長さより―1 以上短い
             P += tmp_constraints <= len(cycle) -1
 
-        t2 = time.time()
-        self.time_t1= round(t2-t1,3)
-        logging.debug(f"Creating Constraints 1 was taken : {self.time_t1} sec") 
+        self.time_t1= round(mytimer.get_timer() ,3)
+        logging.debug("Creating Constraints 1 was taken : %f sec",self.time_t1) 
 
         #制約式2. エッジの数が頂点数-1と同値
+        mytimer.set_timer()
         P += lpSum(X) == len(self.G.nodes()) - 1
         t3 = time.time()
-        self.time_t2= round(t3-t2,3)
-        logging.debug(f"Creating Constraints 2 was taken : {self.time_t2} sec") 
+        self.time_t2= round(mytimer.get_timer(),3)
+        logging.debug("Creating Constraints 2 was taken : %f sec",self.time_t2) 
 
         #solver = PULP_CBC_CMD(msg=0,threads=12,mip=True,maxSeconds=1000)
+        mytimer.set_timer()
         solver = PULP_CBC_CMD(msg=True,threads=12,mip=True,maxSeconds=1000)
         self.stat = P.solve(solver)
-        t4 = time.time()
-        self.time_solve= round(t4-t3,3)
-        logging.debug(f"Solving problem was taken : {self.time_solve} sec") 
-        logging.info(f"Solved status is {LpStatus[self.stat]}") 
+        self.time_solve= round(mytimer.get_timer(),3)
+        logging.debug("Solving problem was taken : %f sec",self.time_solve) 
+        logging.info("Solved status is %s ",LpStatus[self.stat]) 
 
         self.x = []
         if self.stat == 1:
