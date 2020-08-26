@@ -1,1 +1,7 @@
-# MathematicalOptimization
+# このリポジトリについて
+
+このリポジトリでは数理最適化勉強会で用いたコードを格納します。
+
+今日から使える組み合わせ最適化 離散問題ガイドブック
+## P43 MinimumSpanningTree
+最小全域木問題
