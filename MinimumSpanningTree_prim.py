@@ -68,7 +68,8 @@ class ProblemGraph():
 
         t1 = time.time()
         self.time_solve = round(t1 - t0,2)
-        logging.debug(f"Prim method : {self.time_solve} sec") 
+        #logging.debug(f"Prim method : {self.time_solve} sec") 
+        logging.debug("Prim method : %f sec",self.time_solve) 
         self.stat = 1
             
 
