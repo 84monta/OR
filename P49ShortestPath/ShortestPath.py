@@ -6,7 +6,6 @@ import logging
 
 class problem:
     def __init__(self,n=10,p=1,random_seed=1):
-        #self.G = nx.fast_gnp_random_graph(n,p,seed)
         #self.G = nx.directed_configuration_model()
         seed(random_seed)
         self.n = n
