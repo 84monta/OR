@@ -1,4 +1,4 @@
-from pulp import LpVariable,LpProblem,LpBinary,LpContinuous,LpMaximize,COIN_CMD,LpStatus,value
+from pulp import LpVariable,LpProblem,LpBinary,LpContinuous,LpMaximize,LpStatus,value,PULP_CBC_CMD
 from math import sqrt
 from itertools import product
 
@@ -6,7 +6,7 @@ from itertools import product
 #格子の数
 SIZE = 10
 #ばらまくPointの数
-N = 5
+N = 6
 
 #2点間の距離を算出する
 def dist(p1,p2):
@@ -15,10 +15,8 @@ def dist(p1,p2):
 ######変数定義
 #どこにPointを置くか
 x = LpVariable.dict(name="x",indexs=(range(SIZE),range(SIZE)),lowBound=0,upBound=1,cat=LpBinary)
-#Slack変数
-y = LpVariable.dict(name="y",indexs=(range(SIZE),range(SIZE),range(SIZE),range(SIZE)),lowBound=0,upBound=1,cat=LpBinary)
-#今回のキモ 多目的のための変数
-z = LpVariable("z",lowBound=0,upBound=2,cat=LpContinuous)
+#今回のキモ 多目的のための変数(どんなに良くても対角の√2以下)
+z = LpVariable("z",lowBound=0,upBound=1.5,cat=LpContinuous)
 
 #問題定義
 p = LpProblem(name="SpreadingPointsProblem",sense=LpMaximize)
@@ -38,16 +36,11 @@ for i,j in product(range(SIZE),range(SIZE)):
     for k,l in product(range(SIZE),range(SIZE)):
         if i==k and j==l:
             continue
-        #tmp_sumは2つの点が両方1になるときのみ１となる(tmp_sumは-1,0,1をとりうるが、目的関数がzの最大化のため、0,1のいずれかをとる。)
-        tmp_sum = x[(i,j)] + x[(k,l)] - y[(i,j,k,l)]
-        #p += z <= tmp_sum*dist((i,j),(k,l)) + (tmp_sum -1)*BIGM
+        #x[(i,j)] x[(k,l)]が両方1のときのみ意味ある不等式となる。
         p += z <= (1-x[(i,j)])*BIGM + (1-x[(k,l)])*BIGM + dist((i,j),(k,l))
-        #p += z <= dist((i,j),(k,l))*x[(i,j)]
-        #p += z <= dist((i,j),(k,l))*x[(k,l)]
-        #p += z <= dist((i,j),(k,l))*tmp_sum + (1-x[(i,j)])*1000.0 + (1-x[(k,l)])*1000.0
 
-solver = COIN_CMD(mip=True,threads=10)
-p.solve()
+solver = PULP_CBC_CMD(msg=0,mip=True,threads=15)
+p.solve(solver)
 print(LpStatus[p.status])
 print(f"Best Distance = {value(p.objective)}")
 
