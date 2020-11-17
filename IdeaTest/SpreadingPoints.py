@@ -6,7 +6,7 @@ from itertools import product
 #格子の数
 SIZE = 10
 #ばらまくPointの数
-N = 6
+N = 3
 
 #2点間の距離を算出する
 def dist(p1,p2):
@@ -42,7 +42,7 @@ for i,j in product(range(SIZE),range(SIZE)):
 solver = PULP_CBC_CMD(msg=0,mip=True,threads=15)
 p.solve(solver)
 print(LpStatus[p.status])
-print(f"Best Distance = {value(p.objective)}")
+print(f"Best Distance@{N}points = {value(p.objective)}")
 
 #結果出力
 for j in range(SIZE):
