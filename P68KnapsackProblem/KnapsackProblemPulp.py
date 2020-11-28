@@ -1,4 +1,4 @@
-from pulp import LpVariable,LpProblem
+from pulp import LpVariable,LpProblem,lpSum,lpDot
 import random
 from functools import wraps
 import time
@@ -51,10 +51,12 @@ class Products:
         x = LpVariable.dict("x",indexs=(range(self.num)),lowBound=0,upBound=1,cat=LpBinary)
 
         #価値最大化
-        p += sum(x[i]*self.p[i].get_value() for i in range(self.num))
+        #p += sum(x[i]*self.p[i].get_value() for i in range(self.num))
+        #p += lpDot(x,[self.p[i].get_value() for i in range(self.num)])
+        p += lpSum(x[i]*self.p[i].get_value() for i in range(self.num))
 
         #重量を制限以内
-        p += sum(x[i]*self.p[i].get_weight() for i in range(self.num)) <= self.limit_weight
+        p += lpSum(x[i]*self.p[i].get_weight() for i in range(self.num)) <= self.limit_weight
 
         #解く
         solver=PULP_CBC_CMD(msg=0,threads=10)
@@ -70,9 +72,9 @@ class Products:
         else:
             print("## Pulp Optimizing Failed")
     
-    #@time_checker
+    @time_checker
     def optimize_advantage(self,count=False,Best=0,balancer=1.0):
-        from pyqubo import Array,Constraint,Placeholder,UnaryEncInteger #LogEncInteger
+        from pyqubo import Array,Constraint,Placeholder,UnaryEncInteger,Sum #LogEncInteger
         from dwave.system import EmbeddingComposite,DWaveSampler
 
         x = Array.create("x",shape=(self.num),vartype="BINARY")
@@ -80,16 +82,20 @@ class Products:
         y = UnaryEncInteger("y",lower=0,upper=5)
 
         #価値が最大になるように（符号を反転させる）
-        H1 = -sum([x[i]*self.p[i].get_value() for i in range(self.num)])
+        #H1 = -sum([x[i]*self.p[i].get_value() for i in range(self.num)])
+        H1 = -Sum(0,self.num,lambda i :x[i]*self.p[i].get_value() )
 
         #重さが目的の重量になるように
-        H2 = Constraint((self.limit_weight -sum([x[i]*p_i.get_weight() for i,p_i in enumerate(self.p)]) - y*10)**2,"Const Weight")
+        #H2 = Constraint((self.limit_weight -sum([x[i]*p_i.get_weight() for i,p_i in enumerate(self.p)]) - y*10)**2,"Const Weight")
+        H2 = Constraint((self.limit_weight -Sum(0,self.num,lambda i: x[i]*self.p[i].get_weight()) - y*10)**2,"Const Weight")
+        #H2 = Constraint((self.limit_weight -Sum(0,self.num,lambda i: x[i]*self.p[i].get_weight()))**2,"Const Weight")
 
         H = H1 + H2*Placeholder("balancer")
         model = H.compile()
         balance_dict = {"balancer":balancer}
         bqm = model.to_dimod_bqm(feed_dict=balance_dict)
         sampler = EmbeddingComposite(DWaveSampler(solver="Advantage_system1.1"))
+        #sampler = EmbeddingComposite(DWaveSampler(solver="DW_2000Q_6"))
         responses = sampler.sample(bqm,num_reads=1000)
 
         solutions = model.decode_dimod_response(responses,feed_dict=balance_dict)
@@ -99,8 +105,9 @@ class Products:
             for idx,sol in enumerate(solutions):
                 const_str = sol[1]
                 val = sum(int(sol[0]['x'][i])*self.p[i].get_value()  for i in range(self.num))
+                weight = sum(int(sol[0]['x'][i])*self.p[i].get_weight()  for i in range(self.num))
                 #重量が制限以下、かつ価値が最適解の9割以上をカウント
-                if len(const_str) == 0 and val > Best*0.9:
+                if len(const_str) == 0 and val > Best*0.9 and weight <= self.limit_weight:
                     counter += responses.record[idx][2]
 
             del H1,H2,H,model,bqm,responses,solutions
@@ -117,7 +124,7 @@ class Products:
 
     @time_checker
     def optimize_leap(self):
-        from pyqubo import Array,Constraint,Placeholder,UnaryEncInteger #LogEncInteger
+        from pyqubo import Array,Constraint,Placeholder,UnaryEncInteger,Sum #LogEncInteger
         from dwave.system import LeapHybridSampler
 
         x = Array.create("x",shape=(self.num),vartype="BINARY")
@@ -125,7 +132,8 @@ class Products:
         y = UnaryEncInteger("y",lower=0,upper=5)
 
         #価値が最大になるように（符号を反転させる）
-        H1 = -sum([x[i]*self.p[i].get_value() for i in range(self.num)])
+        H1 = -Sum(0,self.num,lambda i :x[i]*self.p[i].get_value() )
+        #H1 = -sum([x[i]*self.p[i].get_value() for i in range(self.num)])
 
         #重さが目的の重量になるように
         H2 = Constraint((self.limit_weight -sum([x[i]*p_i.get_weight() for i,p_i in enumerate(self.p)]) - y*10)**2,"Const Weight")
@@ -135,7 +143,7 @@ class Products:
         balance_dict = {"balancer":1.0}
         bqm = model.to_dimod_bqm(feed_dict=balance_dict)
         sampler = LeapHybridSampler()
-        responses = sampler.sample(bqm,time_limit=10)
+        responses = sampler.sample(bqm,time_limit=3)
 
         solutions = model.decode_dimod_response(responses,feed_dict=balance_dict)
 
@@ -152,16 +160,16 @@ class Products:
         best_val = self.optimize_pulp()
 
         def objective(trial):
-            balancer = trial.suggest_uniform('balancer',0.0,100.0)
+            balancer = trial.suggest_uniform('balancer',0.0,30.0)
             score = 0
             for i in range(10):
                 score += self.optimize_advantage(count=True,Best=best_val,balancer=balancer)
             return score
 
-        study_name = f"knapsack_size{self.num}"
+        study_name = f"knapsack_size{self.num}withy_range30"
         study = optuna.create_study(study_name=study_name,storage='sqlite:///optuna_study.db', load_if_exists=True,direction='maximize')
 
-        study.optimize(objective, n_trials=100)
+        study.optimize(objective, n_trials=25)
 
     def print(self,answer = None):
         sum_flag = True
@@ -198,15 +206,16 @@ if __name__ == "__main__":
     #     #products.optimize_pulp()
     #     products.optimize_advantage()
 
-    for i in range(10,31,5):
-        random.seed(1)
-        products = Products(i)
-        products.optimize_balancer()
+    random.seed(1)
+    products = Products(15)
+    products.optimize_balancer()
 
-        del products
-        gc.collect()
+    #del products
+    #gc.collect()
 
-    #products.print()
-    #print(f"Weight Limit:{products.limit_weight}")
-    #products.optimize_pulp()
-    #products.optimize_leap()
+    # random.seed(1)
+    # products = Products(12)
+    # products.print()
+    # print(f"Weight Limit:{products.limit_weight}")
+    # products.optimize_pulp()
+    # products.optimize_leap()
